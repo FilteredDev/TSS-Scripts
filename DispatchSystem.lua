@@ -9,22 +9,22 @@ local Schedules = require(ScriptFolder.Modules.Generic.ScheduleListSystem)
 local TimeKeeper = require(ScriptFolder.Modules.Generic.TimeKeeper)
 local PresenceInterface = require(ScriptFolder.Modules.Generic.roActivityInterface)
 
-local TrainThreads = {}
-local AnimationStorage = {}
+local TrainThreads = {} --array for holding threads
+local AnimationStorage = {} --array for holding animations
 
 local function PlayAnimationAsync(a) --animation thread used to run animations asynchronously
-	coroutine.wrap(function(animation)
-		  animation:Play()
-	end)(a)
+	coroutine.wrap(function(animation) --create coroutine
+		  animation:Play() --play animation
+	end)(a) --end coroutine and run it
 end
 
 local function timeFormat(unix) --formats time in a nice 00:00:00 format
-	local t=os.date("!*t", unix)
-	return string.format("%02d:%02d", t.hour, t.min)
+	local t=os.date("!*t", unix) --get time dictionary from 'unix'
+	return string.format("%02d:%02d", t.hour, t.min) --return formatted string (00:00)
 end
 	
-local DispatchBlocks = require(ServerStorage.Datafiles.ServerData).DispatchBlocks
-local PaddleAnimationSignal
+local DispatchBlocks = require(ServerStorage.Datafiles.ServerData).DispatchBlocks --dispatch block data
+local PaddleAnimationSignal --scoping variable for animation signal (this may have been part of the problem for a bug we never fixed)
 
 --[[
 Arrival Instructions:
@@ -36,103 +36,103 @@ Await Dispatch (requires Green Signal)
 ]]
 
 local function TLen(t) --gets table len for non-numeric arrays
-	local l = 0
-	for _, v in pairs(t) do
-		l += 1
+	local l = 0 --internal counter
+	for _, v in pairs(t) do --iterate over array
+		l += 1 --increase counter
 	end
-	return l
+	return l --return counter
 end
 
 local function SetClientLoopback(event, func) --asynchronous bindable event setup
-	event.OnServerEvent:Connect(function(p, ...)
-		local data = func(p, ...)
-		if p then
-			event:FireClient(p, unpack(data))
+	event.OnServerEvent:Connect(function(p, ...) --setup event
+		local data = func(p, ...) --run callback
+		if p then --if player exists
+			event:FireClient(p, unpack(data)) --unpack return and send it back
 		end
 	end)
 end
 
 local function MatchKeyInDictionarySet(dictionary, key, match) --finds a key in a dictionary
-	for k, v in pairs(dictionary) do
-		if v[key] == match then
-			return k
+	for k, v in pairs(dictionary) do --iterate over dictionary
+		if v[key] == match then --find a match
+			return k --return match stopping the for loop
 		end
 	end
 end
 
 ----------------------------------------------------------
 local function EnterTrain(s, index) --inserts a Train using TrainClass and then tweens it in
-	local train = TrainClass.fromServiceData(s)
+	local train = TrainClass.fromServiceData(s) --create a new Train using service data
 	
-	TrainThreads[s.Headcode] = train
-	train:Spawn(index)
+	TrainThreads[s.Headcode] = train --set the headcode to a new train in the thread holder
+	train:Spawn(index) --insert the train
 	
-	s.Status = "Arriving"
+	s.Status = "Arriving" --set status to Arriving for internal usage
 	
-	local d=math.random(0,2)
-	if d~= 0 then wait(d) end
+	local d=math.random(0,2) --random delay
+	if d~= 0 then wait(d) end --wait if d > 0 
 	
-	Schedules:SetPlatform(s, index)
-	train:Arrive(s.Passing)
+	Schedules:SetPlatform(s, index) --internal, sets the platform of the service (im actually unsure what this was for again)
+	train:Arrive(s.Passing) --insert the train
 	
-	s.Status = "WaitingForTRTS"
+	s.Status = "WaitingForTRTS" --set the status to a TRTS state
 end
 
 local function ExitTrain(s, b) --Tweens out a train and then removes it
-	local train = TrainThreads[s.Headcode]
-	s.Status = "Departing"
+	local train = TrainThreads[s.Headcode] --fetch train by headcode
+	s.Status = "Departing" --set status to Departing
 	
-	if not s.Passing then
+	if not s.Passing then --random delay calculation, same as above
 		local d=math.random(0,3)
 		if d~= 0 then wait(d) end
 	end
 	
-	train:Depart(PaddleAnimationSignal, s.Passing)
+	train:Depart(PaddleAnimationSignal, s.Passing) --depart block
 	
-	CTRL:SetSignal(train.NodeIndex, "2")
-	b.Platforms[train.NodeIndex].Occupied = false
-	b.TRTS = nil
-	b.Services[s.Headcode] = nil
-	Schedules:FlushService(s.Headcode)
+	CTRL:SetSignal(train.NodeIndex, "2") --sets the signal to red
+	b.Platforms[train.NodeIndex].Occupied = false --blanks the platform
+	b.TRTS = nil --clears trts
+	b.Services[s.Headcode] = nil --clears service
+	Schedules:FlushService(s.Headcode) --removes service from system
 	
-	train:Destroy()
-	TrainThreads[s.Headcode] = nil
+	train:Destroy() --removes the train
+	TrainThreads[s.Headcode] = nil --removes final reference to train, allowing the gc to remove it from memory
 end
 
 local function TRTS(service, block) --Internal TRTS signal.
-	print(service.Headcode, "TRTS Signalled. Departure:", timeFormat(service.Departure))
-	block.TRTS = service.Headcode
-	service.Status = "WaitingForDepartures"
+	print(service.Headcode, "TRTS Signalled. Departure:", timeFormat(service.Departure)) --debug output
+	block.TRTS = service.Headcode --sets TRTS to headcode
+	service.Status = "WaitingForDepartures" --sets status for Departure thread
 	
-	local train = TrainThreads[service.Headcode]
-	CTRL:SetSignal(train.NodeIndex, "1")
-	CTRL:AddToDepartures(block, service)
+	local train = TrainThreads[service.Headcode] --gets train
+	CTRL:SetSignal(train.NodeIndex, "1") --sets signal
+	CTRL:AddToDepartures(block, service) --(internal) adds train to departure queue
 end
 
 local function Depart(service, block, dispatch) --Internal Depart signal.
-	print("Departing:", service.Headcode, timeFormat(service.Departure))
-	dispatch.ActiveData[service.Headcode] = nil
-	ExitTrain(service, block)
+	print("Departing:", service.Headcode, timeFormat(service.Departure)) --debug output
+	dispatch.ActiveData[service.Headcode] = nil --removes train from dispatch
+	ExitTrain(service, block) --tweens out the train
 end
 
 function HandleArrivals() --creates a thread to handle arrivals for each block, this is where the mess starts.
-	return coroutine.wrap(function(block, dispatch)
-		while TimeKeeper.Tick:Wait() do
+	return coroutine.wrap(function(block, dispatch) --create coroutine
+		while TimeKeeper.Tick:Wait() do --wait every TimeKeeper tick (1 second)
 			--TRAINS MUT BE IN WAITINGFORDEPARTURE STATE, NOT WAITINGFORTRTS
-			while TLen(block.ArrivalQueue) > 0 and dispatch.AutomaticArrival do
+			while TLen(block.ArrivalQueue) > 0 and dispatch.AutomaticArrival do --make sure the array is longer than 0 and that automatic mode is on
 				--Do Next Prioritised Service in queue
-				local Service = CTRL:GetServiceArrival(block.Name)
-				if Service then
-					local Platform = CTRL:GetPlatform(block.Name)
-					if Platform then
-						print("Entering:", Service.Headcode, timeFormat(Service.ExpectedArrival), "Is Passing: ", Service.Passing or false)
-						dispatch.ActiveData[Service.Headcode] = {Departure = Service.Departure, IsPassing = Service.Passing}
+				local Service = CTRL:GetServiceArrival(block.Name) --get priority service
+				if Service then --run if service found
+					local Platform = CTRL:GetPlatform(block.Name) --gets an available platform
+					if Platform then --if found platform
+						print("Entering:", Service.Headcode, timeFormat(Service.ExpectedArrival), "Is Passing: ", Service.Passing or false) --debug output
+						dispatch.ActiveData[Service.Headcode] = {Departure = Service.Departure, IsPassing = Service.Passing} --sets dispatch to know train exists
 						
-						if dispatch.Dispatcher then
+						if dispatch.Dispatcher then --tell Dispatcher this train exists
 							ReplicatedStorage.DispatchEvents.TrainArrived:FireClient(Players[dispatch.Dispatcher], Service.Headcode, {Departure = Service.Departure, IsPassing = Service.Passing})
 						end
 						
-						EnterTrain(Service, Platform)
+						EnterTrain(Service, Platform) --tween in train
 					end
 					--this thread now blocks thank god
 				end		
@@ -142,13 +142,13 @@ function HandleArrivals() --creates a thread to handle arrivals for each block, 
 end
 
 function HandleDepartures()  --creates a thread to handle departures for each block
-	return coroutine.wrap(function(block, dispatch)
-		while TimeKeeper.Tick:Wait() do
+	return coroutine.wrap(function(block, dispatch) --create coroutine
+		while TimeKeeper.Tick:Wait() do --wait every TimeKeeper tick (1 second)
 			while TLen(block.DepartureQueue) > 0 and dispatch.AutomaticDeparture do
 				--Do Next Prioritised Service in queue
-				local Service = CTRL:GetServiceDeparture(block.Name)
-				if Service then
-					Depart(Service, block, dispatch)
+				local Service = CTRL:GetServiceDeparture(block.Name) --get priority service
+				if Service then --if found service
+					Depart(Service, block, dispatch) --tweens out train
 					--this thread now blocks thank god
 				end
 			end
