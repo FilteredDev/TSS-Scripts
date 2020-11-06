@@ -1,13 +1,21 @@
 --//FDS TimeKeeper 2
+--//FilteredDev and Ondrik132
 --[[TimeKeeper
 Easy Time tracking and loop synchronisation.
 
 wait() is unpredictable, this will fire everything at the same time
 ]]--
---Create a variable named "TimeKeeperTick" in ReplicatedStorage before installing this
-
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+--create TimeKeeperTick
+local Ticker = ReplicatedStorage:FindFirstChild("TimekeeperTick")
+if not Ticker then
+	Ticker = Instance.new("NumberValue")
+	Ticker.Value = 0
+	Ticker.Name = "TimekeeperTick
+	Ticker.Parent = ReplicatedStorage
+end
 
 local timekeeper = {}
 timekeeper.__index = timekeeper
@@ -50,7 +58,7 @@ local tk = {}
 function tk.new()
 	local o = setmetatable({}, timekeeper)
 	
-	o.TickValue = ReplicatedStorage.TimeKeeperTick
+	o.TickValue = Ticker
 	
 	o.Time = os.time()
 	o._TickEvents = {}
