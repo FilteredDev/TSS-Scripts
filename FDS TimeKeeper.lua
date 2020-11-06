@@ -13,7 +13,7 @@ local Ticker = ReplicatedStorage:FindFirstChild("TimekeeperTick")
 if not Ticker then
 	Ticker = Instance.new("NumberValue")
 	Ticker.Value = 0
-	Ticker.Name = "TimekeeperTick
+	Ticker.Name = "TimekeeperTick"
 	Ticker.Parent = ReplicatedStorage
 end
 
